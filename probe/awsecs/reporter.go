@@ -3,6 +3,8 @@ package awsecs
 
 import (
 	"net/http"
+
+	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
 struct labelInfo {
@@ -97,22 +99,26 @@ func getTaskDeployments(client *ecs.ECS, cluster string, taskArns []string) map[
 }
 
 // returns a map from task ARNs to service names
-func getTaskServices(cluster string, taskArns []string) map[string]string {
+func getTaskServices(cluster string, taskArns []string) map[string]string, error {
 	deploymentMapChan := make(chan map[string] string)
 	go func() {
 		deploymentMapChan <- getDeploymentMap(cluster)
 	}()
 
 	// do these two fetches in parallel
-	taskDeployments := getTaskDeployments(cluster, taskArns)
+	taskDeployments, err := getTaskDeployments(cluster, taskArns)
 	deploymentMap := <-deploymentMapChan
+
+	if err != nil {
+		return nil, err
+	}
 
 	results := make(map[string] string)
 	for taskArn, depID := range taskDeployments {
+		// Note not all tasks map to a deployment, or we could otherwise mismatch due to races.
+		// It's safe to just ignore all these cases and consider them "non-service" tasks.
 		if service, ok := deploymentMap[depID]; ok {
 			results[taskArn] = service
-		} else {
-			// TODO log warning - couldn't find service for task
 		}
 	}
 
