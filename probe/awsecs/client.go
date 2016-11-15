@@ -8,7 +8,7 @@ import (
 )
 
 // a wrapper around an AWS client that makes all the needed calls and just exposes the final results
-struct ecsClient {
+type ecsClient struct {
 	client *ecs.ECS
 	cluster string
 }
@@ -19,7 +19,7 @@ func newClient(cluster string) ecsClient {
 		return err
 	}
 
-	region, err := ec2metadata.New(session).Region()
+	region, err := ec2metadata.New(sess).Region()
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (c ecsClient) getDeploymentMap() map[string]string {
 				lock.Unlock()
 			}()
 			return true
-		}
+		},
 	)
 	group.Wait()
 
@@ -82,7 +82,7 @@ func (c ecsClient) getDeploymentMap() map[string]string {
 }
 
 // returns a map from task ARNs to deployment ids
-func (c ecsClient) getTaskDeployments(taskArns []string) map[string]string, error {
+func (c ecsClient) getTaskDeployments(taskArns []string) (map[string]string, error) {
 	taskPtrs := make([]*string, len(taskArns))
 	for _, arn := range taskArns {
 		taskPtrs = append(taskPtrs, &arn)
@@ -111,7 +111,7 @@ func (c ecsClient) getTaskDeployments(taskArns []string) map[string]string, erro
 }
 
 // returns a map from task ARNs to service names
-func (c ecsClient) getTaskServices(taskArns []string) map[string]string, error {
+func (c ecsClient) getTaskServices(taskArns []string) (map[string]string, error) {
 	deploymentMapChan := make(chan map[string] string)
 	go func() {
 		deploymentMapChan <- c.getDeploymentMap()

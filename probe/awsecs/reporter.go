@@ -2,9 +2,10 @@
 package awsecs
 
 import (
+	"github.com/weaveworks/scope/report"
 )
 
-struct taskInfo {
+type taskInfo struct {
 	containerIDs []string
 	family string
 }
@@ -38,10 +39,12 @@ func getLabelInfo(rpt report.Report) map[string][string]taskInfo {
 }
 
 // implements Tagger
-struct Reporter {
+type Reporter struct {
 }
 
 func (r *Reporter) Tag(rpt report.Report) (report.Report, error) {
+
+	now = time.Now()
 
 	clusterMap := getLabelInfo()
 
@@ -49,17 +52,34 @@ func (r *Reporter) Tag(rpt report.Report) (report.Report, error) {
 
 		taskServices := newClient(cluster).getTaskServices()
 
+		// Create all the services first
 		for _, serviceName := range taskServices {
-			// TODO create a ecs service node
+			rpt.ECSServices.AddNode(report.MakeNode(serviceNodeID(serviceName)))
 		}
 
 		for taskArn, info := range taskMap {
-			// TODO create task node with family
+
+			// new task node
+			node := report.MakeNode(taskNodeID(taskArn))
+			node.Latest.Set("family", now, info.family)
+
 			for _, containerID := range info.containerIDs {
 				// TODO set task node as parent of container
+			}
+
+			if serviceName, ok := taskServices[taskArn]; ok {
+				// TODO set service node as parent of task node
 			}
 		}
 
 	}
 
+}
+
+func serviceNodeID(id string) string {
+	return fmt.Sprintf("%s;ECSService", id)
+}
+
+func taskNodeID(id string) string {
+	return fmt.Sprintf("%s;ECSTask", id)
 }
