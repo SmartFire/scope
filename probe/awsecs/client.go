@@ -1,6 +1,9 @@
 package awsecs
 
 import (
+	"sync"
+
+	log "github.com/Sirupsen/logrus"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -13,21 +16,18 @@ type ecsClient struct {
 	cluster string
 }
 
-func newClient(cluster string) ecsClient {
-	sess, err := session.NewSession()
-	if err != nil {
-		return err
-	}
+func newClient(cluster string) (*ecsClient, error) {
+	sess := session.New()
 
 	region, err := ec2metadata.New(sess).Region()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return ecsClient{
+	return &ecsClient{
 		client: ecs.New(sess, &aws.Config{Region: aws.String(region)}),
 		cluster: cluster,
-	}
+	}, nil
 }
 
 // returns a map from deployment ids to service names
@@ -95,7 +95,7 @@ func (c ecsClient) getTaskDeployments(taskArns []string) (map[string]string, err
 		Tasks: taskPtrs,
 	})
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
 
 	for _, failure := range resp.Failures {
@@ -104,10 +104,10 @@ func (c ecsClient) getTaskDeployments(taskArns []string) (map[string]string, err
 	}
 
 	results := make(map[string]string)
-	for _, task := resp.Tasks {
+	for _, task := range resp.Tasks {
 		results[*task.TaskArn] = *task.StartedBy
 	}
-	return results
+	return results, nil
 }
 
 // returns a map from task ARNs to service names
@@ -134,6 +134,6 @@ func (c ecsClient) getTaskServices(taskArns []string) (map[string]string, error)
 		}
 	}
 
-	return results
+	return results, nil
 }
 

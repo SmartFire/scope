@@ -2,7 +2,11 @@
 package awsecs
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/weaveworks/scope/report"
+	"github.com/weaveworks/scope/probe/docker"
 )
 
 type taskInfo struct {
@@ -11,8 +15,8 @@ type taskInfo struct {
 }
 
 // return map from cluster to map of task arns to task infos
-func getLabelInfo(rpt report.Report) map[string][string]taskInfo {
-	results := make(map[string][string]taskInfo)
+func getLabelInfo(rpt report.Report) map[string]map[string]taskInfo {
+	results := make(map[string]map[string]taskInfo)
 	for nodeID, node := range rpt.Container.Nodes {
 
 		taskArn, taskArnOk := node.Latest.Lookup(docker.LabelPrefix + "com.amazonaws.ecs.task-arn")
@@ -26,10 +30,10 @@ func getLabelInfo(rpt report.Report) map[string][string]taskInfo {
 				results[cluster] = taskMap
 			}
 
-			task, ok := results[taskArn]
+			task, ok := taskMap[taskArn]
 			if !ok {
-				task = taskInfo{containerIDs: make([]string), family: family}
-				results[taskArn] = task
+				task = taskInfo{containerIDs: make([]string, 0), family: family}
+				taskMap[taskArn] = task
 			}
 
 			task.containerIDs = append(task.containerIDs, nodeID)
@@ -44,13 +48,26 @@ type Reporter struct {
 
 func (r *Reporter) Tag(rpt report.Report) (report.Report, error) {
 
-	now = time.Now()
+	now := time.Now()
 
-	clusterMap := getLabelInfo()
+	clusterMap := getLabelInfo(rpt)
 
 	for cluster, taskMap := range clusterMap {
 
-		taskServices := newClient(cluster).getTaskServices()
+		client, err := newClient(cluster)
+		if err != nil {
+			return rpt, err
+		}
+
+		taskArns := make([]string, 0, len(taskMap))
+		for taskArn, _ := range taskMap {
+			taskArns = append(taskArns, taskArn)
+		}
+
+		taskServices, err := client.getTaskServices(taskArns)
+		if err != nil {
+			return rpt, err
+		}
 
 		// Create all the services first
 		for _, serviceName := range taskServices {
@@ -63,6 +80,8 @@ func (r *Reporter) Tag(rpt report.Report) (report.Report, error) {
 			node := report.MakeNode(taskNodeID(taskArn))
 			node.Latest.Set("family", now, info.family)
 
+			rpt.ECSTask.AddNode(node)
+
 			for _, containerID := range info.containerIDs {
 				// TODO set task node as parent of container
 			}
@@ -73,6 +92,8 @@ func (r *Reporter) Tag(rpt report.Report) (report.Report, error) {
 		}
 
 	}
+
+	return rpt, nil
 
 }
 
